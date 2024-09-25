@@ -21,5 +21,5 @@ PhotoPrintApp is a PyQt5 application designed to facilitate printing images with
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Merdekasoft/PhotoPrintApp.git
-   cd PhotoPrintApp
+   git clone https://github.com/Merdekasoft/printimg.git
+   cd printimg
