@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QComboBox,
                              QFileDialog, QSpinBox, QVBoxLayout, QHBoxLayout, QWidget,
@@ -26,19 +25,27 @@ class PhotoPrintApp(QWidget):
 
         # Print settings
         settingsLayout = QHBoxLayout()
+
         settingsLayout.addWidget(QLabel('Printer:'))
-        settingsLayout.addWidget(QComboBox())
-        
+        self.printerCombo = QComboBox()
+
+        # Get available printers and add them to the combo box
+        printers = QPrinterInfo.availablePrinters()
+        for printer in printers:
+            self.printerCombo.addItem(printer.printerName())
+
+        settingsLayout.addWidget(self.printerCombo)
+
         settingsLayout.addWidget(QLabel('Paper size:'))
         paperSizeCombo = QComboBox()
         paperSizeCombo.addItem('A4')
         settingsLayout.addWidget(paperSizeCombo)
-        
+
         settingsLayout.addWidget(QLabel('Quality:'))
         qualityCombo = QComboBox()
         qualityCombo.addItem('Standard')
         settingsLayout.addWidget(qualityCombo)
-        
+
         settingsLayout.addWidget(QLabel('Paper type:'))
         paperTypeCombo = QComboBox()
         paperTypeCombo.addItem('Plain paper')
@@ -66,7 +73,7 @@ class PhotoPrintApp(QWidget):
 
         self.pageLabel = QLabel('1 of 1 page')
         self.pageLabel.setAlignment(Qt.AlignRight)
-        
+
         self.next_button = QPushButton(">")
         self.next_button.clicked.connect(self.navigate_next)
         navigationLayout.addWidget(self.next_button)
@@ -77,7 +84,7 @@ class PhotoPrintApp(QWidget):
         leftFrame = QFrame()
         leftFrame.setLayout(leftLayout)
         previewLayout.addWidget(leftFrame, 3)  # Increase ratio to make listbox smaller
-        
+
         # Right side - list of print options
         self.optionsList = QListWidget()
         self.optionsList.addItem(QListWidgetItem('Full page photo'))
@@ -226,30 +233,33 @@ class PhotoPrintApp(QWidget):
 
         x_offset = (target_rect.width() - scaled_img.width()) // 2
         y_offset = (target_rect.height() - scaled_img.height()) // 2
-
-        painter.drawImage(target_rect.adjusted(x_offset, y_offset, -x_offset, -y_offset), scaled_img)
+        painter.drawImage(target_rect.x() + x_offset, target_rect.y() + y_offset, scaled_img)
 
     def print_images(self):
         if not self.images:
             return
 
-        printer = QPrinter(QPrinterInfo.defaultPrinter())
-        dialog = QPrintDialog(printer, self)
-        if dialog.exec_() == QPrintDialog.Accepted:
+        printer = QPrinter()
+        print_dialog = QPrintDialog(printer, self)
+
+        if print_dialog.exec_() == QPrintDialog.Accepted:
             painter = QPainter(printer)
-
             for index in range(len(self.images)):
-                self.current_image_index = index
-                self.update_preview()  # Update preview before printing
-                self.draw_full_page_layout(painter)  # Just print full page for each image
+                img = QImage(self.images[index])
+                page_rect = printer.pageRect()
+                target_rect = QRect(0, 0, page_rect.width(), page_rect.height())
+                self.draw_image(painter, img, target_rect)
                 if index < len(self.images) - 1:
-                    printer.newPage()  # Add new page for each image
+                    printer.newPage()
             painter.end()
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    image_files = sys.argv[1:]  # Get image files from command-line arguments
-    mainWin = PhotoPrintApp(image_files)
-    mainWin.show()
+
+    # Images passed as command-line arguments
+    image_files = sys.argv[1:]
+
+    photo_print_app = PhotoPrintApp(image_files)
+    photo_print_app.show()
     sys.exit(app.exec_())
+

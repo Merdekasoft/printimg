@@ -1,4 +1,5 @@
 # PhotoPrintApp
+![PhotoPrintApp](https://i.imgur.com/j8N4B0C.png)
 
 PhotoPrintApp is a PyQt5 application designed to facilitate printing images with various layout options. Users can load images from the command line, select print settings, and preview the images before printing.
 
