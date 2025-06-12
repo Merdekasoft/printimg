@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sys
-import math # For math.ceil
+import math
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QComboBox,
                              QFileDialog, QSpinBox, QVBoxLayout, QHBoxLayout,
                              QFrame, QSizePolicy, QListWidgetItem,
@@ -10,7 +10,7 @@ from PyQt5.QtPrintSupport import QPrinter, QPrintDialog, QPrinterInfo
 from PyQt5.QtCore import Qt, QRect, QRectF, QSizeF
 
 class PhotoPrintApp(QWidget):
-    PHOTO_GAP_MM = 5 # Gap between photos in mm
+    PHOTO_GAP_MM = 5 # Jarak antar foto dalam mm
 
     def __init__(self, image_files):
         super().__init__()
@@ -31,20 +31,31 @@ class PhotoPrintApp(QWidget):
             "A4 (210 x 297 mm)": (210, 297, "A4_paper"),
             "F4 (210 x 330 mm)": (210, 330, "F4_paper"),
         }
-
+        
+        # Kamus ukuran foto dalam Bahasa Inggris untuk kejelasan
         self.photo_print_sizes_mm = {
-            "2R": (64, 89), "3R": (89, 127), "4R": (102, 152),
-            "5R": (127, 178), "6R": (152, 203), "8R": (203, 254), "10R": (254, 305),
-            "2x3_cm": (20, 30), "3x4_cm": (30, 40), "4x6_cm": (40, 60)
+            "2R (6.4x8.9cm) Portrait": (64, 89), "2R (8.9x6.4cm) Landscape": (89, 64),
+            "3R (8.9x12.7cm) Portrait": (89, 127), "3R (12.7x8.9cm) Landscape": (127, 89),
+            "4R (10.2x15.2cm) Portrait": (102, 152), "4R (15.2x10.2cm) Landscape": (152, 102),
+            "5R (12.7x17.8cm) Portrait": (127, 178), "5R (17.8x12.7cm) Landscape": (178, 127),
+            "6R (15.2x20.3cm) Portrait": (152, 203), "6R (20.3x15.2cm) Landscape": (203, 152),
+            "8R (20.3x25.4cm) Portrait": (203, 254), "8R (25.4x20.3cm) Landscape": (254, 203),
+            "10R (25.4x30.5cm) Portrait": (254, 305), "10R (30.5x25.4cm) Landscape": (305, 254),
+            "ID Photo (2x3cm) Portrait": (20, 30), "ID Photo (3x2cm) Landscape": (30, 20),
+            "ID Photo (3x4cm) Portrait": (30, 40), "ID Photo (4x3cm) Landscape": (40, 30),
+            "ID Photo (4x6cm) Portrait": (40, 60), "ID Photo (6x4cm) Landscape": (60, 40),
+            "Passport (EU) 3.5x4.5cm": (35, 45),
+            "Passport (US) 5.1x5.1cm": (51, 51),
+            "Square (10.2x10.2cm)": (102, 102),
+            "Square (12.7x12.7cm)": (127, 127),
         }
         
         self.dynamic_layout_keys = {
-            "paper_div_2_rows": "Layout: 2 photos per page",      # 1 col, 2 rows
-            "paper_div_2x2_grid": "Layout: 4 photos per page (2x2)",# 2 cols, 2 rows
-            "paper_div_2x3_grid": "Layout: 6 photos per page (2x3)",# 2 cols, 3 rows # NEW OPTION
-            "paper_div_3x3_grid": "Layout: 9 photos per page (3x3)" # 3 cols, 3 rows
+            "paper_div_2_rows": "Layout: 2 photos per page",
+            "paper_div_2x2_grid": "Layout: 4 photos per page (2x2)",
+            "paper_div_2x3_grid": "Layout: 6 photos per page (2x3)",
+            "paper_div_3x3_grid": "Layout: 9 photos per page (3x3)"
         }
-
 
         self.initUI()
 
@@ -100,7 +111,7 @@ class PhotoPrintApp(QWidget):
         self.prev_button.clicked.connect(self.navigate_previous_page)
         navLayout.addWidget(self.prev_button)
 
-        self.pageLabel = QLabel('0 of 0')
+        self.pageLabel = QLabel('Page 0 of 0')
         self.pageLabel.setAlignment(Qt.AlignCenter)
         navLayout.addWidget(self.pageLabel, 1)
 
@@ -114,27 +125,18 @@ class PhotoPrintApp(QWidget):
         self.optionsList = QListWidget()
         self.optionsList.addItem('Full page photo')
         
-        # Add dynamic layout options in a specific order if desired, or based on dict order
-        # For explicit order:
-        # self.optionsList.addItem(self.dynamic_layout_keys["paper_div_2_rows"])
-        # self.optionsList.addItem(self.dynamic_layout_keys["paper_div_2x2_grid"])
-        # self.optionsList.addItem(self.dynamic_layout_keys["paper_div_2x3_grid"]) # New
-        # self.optionsList.addItem(self.dynamic_layout_keys["paper_div_3x3_grid"])
-        # Or simply iterate:
         for key_display_text in self.dynamic_layout_keys.values(): 
             self.optionsList.addItem(key_display_text)
 
-        ordered_photo_size_keys = [
-            "2R", "3R", "4R", "5R", "6R", "8R", "10R",
-            "2x3_cm", "3x4_cm", "4x6_cm"
-        ]
-        for size_key in ordered_photo_size_keys:
-            if size_key in self.photo_print_sizes_mm:
-                display_label = size_key
-                if size_key.endswith("_cm"): display_label = size_key.replace("_cm", " cm")
-                self.optionsList.addItem(f"Print size: {display_label}")
+        separator = QListWidgetItem("--- Fixed Print Sizes ---")
+        separator.setTextAlignment(Qt.AlignCenter)
+        separator.setFlags(Qt.NoItemFlags)
+        self.optionsList.addItem(separator)
+
+        for size_key in self.photo_print_sizes_mm.keys():
+            self.optionsList.addItem(f"Print size: {size_key}")
         
-        self.optionsList.setMaximumWidth(250)
+        self.optionsList.setMaximumWidth(300)
         self.optionsList.currentItemChanged.connect(self.on_layout_option_changed)
         previewLayout.addWidget(self.optionsList, 1)
 
@@ -206,16 +208,11 @@ class PhotoPrintApp(QWidget):
                     break
         elif text.startswith("Print size: "):
             new_layout_key = "fixed_size_photo"
-            try:
-                extracted_part = text.replace("Print size: ", "")
-                key_part = extracted_part.replace(" cm", "_cm")
-                if key_part in self.photo_print_sizes_mm:
-                    new_photo_print_size_key = key_part
-                else: 
-                    new_layout_key = "full_page" 
-                    new_photo_print_size_key = None
-            except Exception: 
-                new_layout_key = "full_page"
+            key_part = text.replace("Print size: ", "")
+            if key_part in self.photo_print_sizes_mm:
+                new_photo_print_size_key = key_part
+            else: 
+                new_layout_key = "full_page" 
                 new_photo_print_size_key = None
         
         if self.current_layout_key != new_layout_key or \
@@ -278,26 +275,19 @@ class PhotoPrintApp(QWidget):
                 base_target_w_mm, base_target_h_mm = 0, 0
                 is_dynamic_paper_division_layout = False 
 
-                if self.current_photo_print_size_key == "paper_div_2_rows": # 1 col, 2 rows
-                    base_target_w_mm = bg_paper_w_mm 
-                    base_target_h_mm = (bg_paper_h_mm - (2 - 1) * self.PHOTO_GAP_MM) / 2.0 
+                if self.current_photo_print_size_key in self.dynamic_layout_keys:
                     is_dynamic_paper_division_layout = True
-                elif self.current_photo_print_size_key == "paper_div_2x2_grid": # 2 cols, 2 rows
-                    base_target_w_mm = (bg_paper_w_mm - (2 - 1) * self.PHOTO_GAP_MM) / 2.0 
-                    base_target_h_mm = (bg_paper_h_mm - (2 - 1) * self.PHOTO_GAP_MM) / 2.0
-                    is_dynamic_paper_division_layout = True
-                # --- NEW 2x3 GRID LOGIC ---
-                elif self.current_photo_print_size_key == "paper_div_2x3_grid": # 2 cols, 3 rows
-                    cols, rows = 2, 3
+                    if self.current_photo_print_size_key == "paper_div_2_rows":
+                        cols, rows = 1, 2
+                    elif self.current_photo_print_size_key == "paper_div_2x2_grid":
+                        cols, rows = 2, 2
+                    elif self.current_photo_print_size_key == "paper_div_2x3_grid":
+                        cols, rows = 2, 3
+                    elif self.current_photo_print_size_key == "paper_div_3x3_grid":
+                        cols, rows = 3, 3
                     base_target_w_mm = (bg_paper_w_mm - (cols - 1) * self.PHOTO_GAP_MM) / cols
                     base_target_h_mm = (bg_paper_h_mm - (rows - 1) * self.PHOTO_GAP_MM) / rows
-                    is_dynamic_paper_division_layout = True
-                # --- END OF NEW 2x3 GRID LOGIC ---
-                elif self.current_photo_print_size_key == "paper_div_3x3_grid": # 3 cols, 3 rows
-                    cols, rows = 3, 3
-                    base_target_w_mm = (bg_paper_w_mm - (cols - 1) * self.PHOTO_GAP_MM) / cols 
-                    base_target_h_mm = (bg_paper_h_mm - (rows - 1) * self.PHOTO_GAP_MM) / rows
-                    is_dynamic_paper_division_layout = True
+
                 elif self.current_photo_print_size_key in self.photo_print_sizes_mm:
                     base_target_w_mm, base_target_h_mm = self.photo_print_sizes_mm[self.current_photo_print_size_key]
                 else: 
@@ -306,10 +296,10 @@ class PhotoPrintApp(QWidget):
                 
                 current_w_mm, current_h_mm = base_target_w_mm, base_target_h_mm
                 
-                if not is_dynamic_paper_division_layout:
-                    angle = self.image_rotations.get(image_path, 0)
-                    if angle == 90 or angle == 270:
-                        current_w_mm, current_h_mm = base_target_h_mm, base_target_w_mm 
+                angle = self.image_rotations.get(image_path, 0)
+                # --- DIUBAH: Hanya tukar dimensi placeholder untuk ukuran cetak tetap, bukan untuk layout dinamis ---
+                if (angle == 90 or angle == 270) and not is_dynamic_paper_division_layout:
+                    current_w_mm, current_h_mm = base_target_h_mm, base_target_w_mm 
 
                 if current_w_mm <= 0 or current_h_mm <= 0: continue
 
@@ -329,19 +319,13 @@ class PhotoPrintApp(QWidget):
                 
                 if is_dynamic_paper_division_layout:
                     if self.current_photo_print_size_key == "paper_div_2_rows":
-                        cols_fit = 1
-                        rows_fit = 2 
+                        cols_fit, rows_fit = 1, 2
                     elif self.current_photo_print_size_key == "paper_div_2x2_grid":
-                        cols_fit = 2
-                        rows_fit = 2
-                    # --- OVERRIDE FOR 2x3 GRID ---
+                        cols_fit, rows_fit = 2, 2
                     elif self.current_photo_print_size_key == "paper_div_2x3_grid":
-                        cols_fit = 2
-                        rows_fit = 3
-                    # --- END OF OVERRIDE FOR 2x3 GRID ---
+                        cols_fit, rows_fit = 2, 3
                     elif self.current_photo_print_size_key == "paper_div_3x3_grid":
-                        cols_fit = 3
-                        rows_fit = 3
+                        cols_fit, rows_fit = 3, 3
                 
                 max_photos_per_sheet = cols_fit * rows_fit
                 if max_photos_per_sheet <= 0: continue
@@ -376,7 +360,6 @@ class PhotoPrintApp(QWidget):
                         if current_sheet_photo_count > 0:
                             self.document_pages.append(page_desc)
                         elif prints_placed_for_this_image < num_copies_per_original_image:
-                            print("Error: Could not place all images in N-up layout. Forcing single image print for remaining.")
                             for _i_fallback in range(num_copies_per_original_image - prints_placed_for_this_image):
                                 x_offset_mm = (bg_paper_w_mm - current_w_mm) / 2.0
                                 y_offset_mm = (bg_paper_h_mm - current_h_mm) / 2.0
@@ -425,7 +408,7 @@ class PhotoPrintApp(QWidget):
     def update_page_label_ui(self):
         total_doc_pages = len(self.document_pages)
         if total_doc_pages == 0:
-            self.pageLabel.setText("0 of 0")
+            self.pageLabel.setText("Page 0 of 0")
             current_display_page = 0
         else:
             current_display_page = self.current_document_page_index + 1
