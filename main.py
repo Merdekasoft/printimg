@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 import sys
 import math
-from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QComboBox,
-                             QFileDialog, QSpinBox, QVBoxLayout, QHBoxLayout,
-                             QFrame, QSizePolicy, QListWidgetItem,
-                             QMessageBox, QListWidget)
-from PyQt5.QtGui import QPixmap, QPainter, QImage, QTransform
-from PyQt5.QtPrintSupport import QPrinter, QPrintDialog, QPrinterInfo
-from PyQt5.QtCore import Qt, QRect, QRectF, QSizeF
+from PySide6.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QComboBox,
+                               QFileDialog, QSpinBox, QVBoxLayout, QHBoxLayout,
+                               QFrame, QSizePolicy, QListWidgetItem,
+                               QMessageBox, QListWidget)
+from PySide6.QtGui import QPixmap, QPainter, QImage, QTransform, QPageSize, QPageLayout
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog, QPrinterInfo
+from PySide6.QtCore import Qt, QRect, QRectF, QSizeF
 
 class PhotoPrintApp(QWidget):
-    PHOTO_GAP_MM = 5 # Jarak antar foto dalam mm
+    PHOTO_GAP_MM = 2 # Jarak antar foto dalam mm
 
     def __init__(self, image_files):
         super().__init__()
         self.setWindowTitle("Print Pictures")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 700, 600)
 
         self.source_images = []
         self.document_pages = [] 
@@ -57,7 +57,13 @@ class PhotoPrintApp(QWidget):
             "paper_div_3x3_grid": "Layout: 9 photos per page (3x3)"
         }
 
+        # Initialize navigation buttons to None to avoid AttributeError
+        self.prev_button = None
+        self.next_button = None
+
         self.initUI()
+
+       
 
         if image_files:
             self.load_images(image_files)
@@ -70,29 +76,106 @@ class PhotoPrintApp(QWidget):
     def initUI(self):
         mainLayout = QVBoxLayout()
 
+        # --- Ensure pageLabel is created early ---
+        self.pageLabel = QLabel('Page 0 of 0')
+        self.pageLabel.setAlignment(Qt.AlignCenter)
+
         settingsLayout = QHBoxLayout()
         settingsLayout.addWidget(QLabel('Printer:'))
         self.printerCombo = QComboBox()
+        # Always add "Save as PDF" as the first option
+        self.printerCombo.addItem("Save as PDF")
         printers = QPrinterInfo.availablePrinters()
+        default_printer_name = None
         if not printers:
             self.no_physical_printer = True
-            self.printerCombo.addItem("Save as PDF")
         else:
+            default_printer_info = QPrinterInfo.defaultPrinter()
+            if not default_printer_info.isNull():
+                default_printer_name = default_printer_info.printerName()
             for printer in printers:
                 self.printerCombo.addItem(printer.printerName())
         settingsLayout.addWidget(self.printerCombo)
 
+        # Set default selection to real printer if available, otherwise "Save as PDF"
+        if default_printer_name:
+            idx = self.printerCombo.findText(default_printer_name)
+            if idx != -1:
+                self.printerCombo.setCurrentIndex(idx)
+            else:
+                self.printerCombo.setCurrentIndex(0)
+        else:
+            self.printerCombo.setCurrentIndex(0)
+
+        # Paper size combo: ambil dari printer asli jika ada
         self.paperSizeCombo = QComboBox()
-        for display_name in self.paper_definitions.keys():
-            self.paperSizeCombo.addItem(display_name)
+        self.paper_size_display_map = {}
+        allowed_paper_names = {"A4", "A5", "Letter"}  # Tambahkan yang umum saja
+
+        # --- Tambahkan semua ukuran kertas dari printer default, urutkan berdasarkan nama ---
+        default_printer_info = QPrinterInfo.defaultPrinter()
+        if not self.no_physical_printer and not default_printer_info.isNull():
+            supported_sizes = default_printer_info.supportedPageSizes()
+            # Urutkan berdasarkan nama (a-z)
+            supported_sizes = sorted(
+                supported_sizes,
+                key=lambda ps: QPageSize.name(ps.id()).lower()
+            )
+            for page_size in supported_sizes:
+                size_name = QPageSize.name(page_size.id())
+                dimensions = page_size.size(QPageSize.Unit.Millimeter)
+                width = dimensions.width()
+                height = dimensions.height()
+                display_name = f"{size_name} ({width:.2f} x {height:.2f} mm)"
+                self.paperSizeCombo.addItem(display_name)
+                self.paper_size_display_map[display_name] = page_size
+        else:
+            # Tambahkan F4 manual jika ingin
+            self.paperSizeCombo.addItem("F4 (210 x 330 mm)")
+            for display_name in self.paper_definitions.keys():
+                if display_name != "F4 (210 x 330 mm)":
+                    self.paperSizeCombo.addItem(display_name)
         self.paperSizeCombo.currentIndexChanged.connect(self.on_settings_changed)
         settingsLayout.addWidget(QLabel('Paper size:'))
         settingsLayout.addWidget(self.paperSizeCombo)
+        # Set default ke A4 jika ada
+        idx_a4 = -1
+        # Cari item yang mengandung "A4" (case-insensitive)
+        for i in range(self.paperSizeCombo.count()):
+            if "a4" in self.paperSizeCombo.itemText(i).lower():
+                idx_a4 = i
+                break
+        if idx_a4 != -1:
+            self.paperSizeCombo.setCurrentIndex(idx_a4)
 
+        # Quality combo: tampilkan pilihan sederhana dan jelas
         self.qualityCombo = QComboBox()
-        self.qualityCombo.addItems(['Standard', 'High', 'Draft'])
+        # Pilihan kualitas umum, urut dari kualitas tertinggi ke terendah
+        self.qualityCombo.addItems([
+            'Photo (1200 dpi)', 'High (600 dpi)', 'Standard (300 dpi)', 'Draft (150 dpi)'
+        ])
+        self.qualityCombo.setCurrentIndex(2)  # Default ke Standard
         settingsLayout.addWidget(QLabel('Quality:'))
         settingsLayout.addWidget(self.qualityCombo)
+
+        # --- Tambahkan Paper Type ---
+        self.paperTypeCombo = QComboBox()
+        self.paperTypeCombo.addItems([
+            "Plain", "Glossy", "Matte"
+        ])
+        self.paperTypeCombo.setCurrentText("Plain")
+        settingsLayout.addWidget(QLabel('Paper type:'))
+        settingsLayout.addWidget(self.paperTypeCombo)
+        # --- End Paper Type ---
+
+        # Simpan mapping tipe kertas ke QPrinter.PaperSource jika ingin digunakan
+        # Gunakan QPrinter.PaperSource enum, import jika perlu
+        from PySide6.QtPrintSupport import QPrinter
+        self.paper_type_map = {
+            "Plain": QPrinter.PaperSource.Auto,
+            "Glossy": QPrinter.PaperSource.Auto,
+            "Envelope": QPrinter.PaperSource.Envelope
+        }
 
         mainLayout.addLayout(settingsLayout)
 
@@ -111,8 +194,7 @@ class PhotoPrintApp(QWidget):
         self.prev_button.clicked.connect(self.navigate_previous_page)
         navLayout.addWidget(self.prev_button)
 
-        self.pageLabel = QLabel('Page 0 of 0')
-        self.pageLabel.setAlignment(Qt.AlignCenter)
+        # self.pageLabel is already created above, just add it here
         navLayout.addWidget(self.pageLabel, 1)
 
         self.next_button = QPushButton("Next >")
@@ -136,7 +218,8 @@ class PhotoPrintApp(QWidget):
         for size_key in self.photo_print_sizes_mm.keys():
             self.optionsList.addItem(f"Print size: {size_key}")
         
-        self.optionsList.setMaximumWidth(300)
+        self.optionsList.setMinimumWidth(280)  # Lebar minimum agar list lebih lebar
+        self.optionsList.setMaximumWidth(500)  # Lebar maksimum agar tidak terlalu besar
         self.optionsList.currentItemChanged.connect(self.on_layout_option_changed)
         previewLayout.addWidget(self.optionsList, 1)
 
@@ -157,7 +240,8 @@ class PhotoPrintApp(QWidget):
             "Fit picture to frame",
             "Stretch to fill frame"
         ])
-        self.scaling_mode_combo.setCurrentText("Crop image to fill frame")
+        # Set default ke "Fit picture to frame"
+        self.scaling_mode_combo.setCurrentText("Fit picture to frame")
         self.scaling_mode_combo.currentIndexChanged.connect(self.on_settings_changed)
         bottomLayout.addWidget(self.scaling_mode_combo)
 
@@ -174,6 +258,16 @@ class PhotoPrintApp(QWidget):
         bottomLayout.addWidget(self.cancel_button)
         mainLayout.addLayout(bottomLayout)
         self.setLayout(mainLayout)
+
+    def center(self):
+        # Center the window on the screen (both horizontally and vertically)
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            window_geometry = self.frameGeometry()
+            center_point = screen_geometry.center()
+            window_geometry.moveCenter(center_point)
+            self.move(window_geometry.topLeft())
 
     def on_settings_changed(self):
         self._regenerate_document_pages()
@@ -223,6 +317,12 @@ class PhotoPrintApp(QWidget):
 
     def get_selected_paper_info(self):
         selected_display_name = self.paperSizeCombo.currentText()
+        # Jika printer asli, ambil ukuran dari PageSize object
+        if not self.no_physical_printer and selected_display_name in self.paper_size_display_map:
+            ps = self.paper_size_display_map[selected_display_name]
+            size_mm = ps.size(QPageSize.Millimeter)  # gunakan QPageSize.Millimeter
+            return (size_mm.width(), size_mm.height(), ps.key)
+        # PDF/fallback
         if selected_display_name in self.paper_definitions:
             return self.paper_definitions[selected_display_name]
         if self.paper_definitions: 
@@ -414,12 +514,19 @@ class PhotoPrintApp(QWidget):
             current_display_page = self.current_document_page_index + 1
             self.pageLabel.setText(f"Page {current_display_page} of {total_doc_pages}")
 
-        self.prev_button.setEnabled(current_display_page > 1)
-        self.next_button.setEnabled(current_display_page < total_doc_pages)
+        # Only set enabled if buttons exist
+        if self.prev_button is not None:
+            self.prev_button.setEnabled(current_display_page > 1)
+        if self.next_button is not None:
+            self.next_button.setEnabled(current_display_page < total_doc_pages)
         self.print_button.setEnabled(total_doc_pages > 0)
         self.rotate_button.setEnabled(total_doc_pages > 0)
 
     def update_preview_ui(self):
+        # Tambahkan proteksi jika self.imagePreview belum ada
+        if not hasattr(self, "imagePreview") or self.imagePreview is None:
+            return
+
         if not self.document_pages or not (0 <= self.current_document_page_index < len(self.document_pages)):
             self.imagePreview.clear()
             self.imagePreview.setText("No page to display")
@@ -545,31 +652,67 @@ class PhotoPrintApp(QWidget):
         else:
             printer.setPrinterName(self.printerCombo.currentText())
             printDialog = QPrintDialog(printer, self)
-            if printDialog.exec_() != QPrintDialog.Accepted: return
+            if printDialog.exec() != QPrintDialog.Accepted: return
 
         printer.setCopyCount(1)
 
+        # Ambil ukuran kertas dari printer asli
+        rect = printer.pageRect(QPrinter.Millimeter)
+        bg_paper_w_mm_print = rect.width()
+        bg_paper_h_mm_print = rect.height()
         paper_info_for_print = self.get_selected_paper_info()
-        bg_paper_w_mm_print, bg_paper_h_mm_print, bg_paper_key_print = paper_info_for_print
+        _, _, bg_paper_key_print = paper_info_for_print
+
+        # FIX: Call bg_paper_key_print if it's a method
+        if callable(bg_paper_key_print):
+            bg_paper_key_print = bg_paper_key_print()
 
         simple_key = bg_paper_key_print.replace("_paper","")
+        # Ganti mapping ke QPageSize
         paper_size_map = {
-            "A4": QPrinter.A4, "A3": QPrinter.A3, "A5": QPrinter.A5, 
-            "B5": QPrinter.B5, "Letter": QPrinter.Letter,
+            "A4": QPageSize.A4,
+            "A3": QPageSize.A3,
+            "A5": QPageSize.A5,
+            "B5": QPageSize.B5,
+            "Letter": QPageSize.Letter,
         }
-        qt_paper_size = paper_size_map.get(simple_key, QPrinter.Custom)
+        qt_paper_size = paper_size_map.get(simple_key, None)
 
-        if qt_paper_size != QPrinter.Custom:
-            printer.setPageSize(qt_paper_size)
+        # Paper size dari combo box (jika printer asli)
+        if not self.no_physical_printer:
+            selected_paper_size = self.paperSizeCombo.currentText()
+            try:
+                if selected_paper_size in self.paper_size_display_map:
+                    printer.setPageSize(self.paper_size_display_map[selected_paper_size])
+            except Exception:
+                pass
+            rect = printer.pageRect(QPrinter.Millimeter)
+            bg_paper_w_mm_print = rect.width()
+            bg_paper_h_mm_print = rect.height()
         else:
-             printer.setPaperSize(QSizeF(bg_paper_w_mm_print, bg_paper_h_mm_print), QPrinter.Millimeter)
+            # ...existing code untuk PDF...
+            pass
 
-        printer.setOrientation(QPrinter.Portrait)
+        # Ganti orientasi kertas
+        printer.setPageOrientation(QPageLayout.Portrait)
 
+        # Quality dari combo box (jika printer asli)
         quality_str = self.qualityCombo.currentText()
-        if quality_str == 'High': printer.setResolution(QPrinter.HighResolution)
-        elif quality_str == 'Standard': printer.setResolution(300)
-        elif quality_str == 'Draft': printer.setResolution(150)
+        try:
+            printer.setResolution(int(quality_str))
+        except Exception:
+            # fallback
+            if quality_str == 'High': printer.setResolution(QPrinter.HighResolution)
+            elif quality_str == 'Standard': printer.setResolution(300)
+            elif quality_str == 'Draft': printer.setResolution(150)
+
+        # Set paper source dari combo box jika ada
+        selected_paper_type = self.paperTypeCombo.currentText()
+        if selected_paper_type in self.paper_type_map:
+            try:
+                printer.setPaperSource(self.paper_type_map[selected_paper_type])
+            except Exception:
+                pass
 
         painter = QPainter()
         if not painter.begin(printer):
@@ -610,7 +753,7 @@ class PhotoPrintApp(QWidget):
             self.draw_image_layout(painter, images_on_this_physical_sheet, rects_for_this_physical_sheet_px)
 
         painter.end()
-        QMessageBox.information(self, "Print", "Printing finished (or saved to PDF).")
+        # Removed QMessageBox.information(self, "Print", "Printing finished (or saved to PDF).")
 
 
 if __name__ == '__main__':
@@ -620,11 +763,16 @@ if __name__ == '__main__':
     if image_files_arg:
         initial_files_to_load = image_files_arg
     else:
-        selected_files, _ = QFileDialog.getOpenFileNames(None, "Select Images", "", 
-                                                         "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
+        selected_files, _ = QFileDialog.getOpenFileNames(
+            None,
+            "Select Images",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff *.svg *.ico *.ppm *.pgm *.pbm *.xbm *.xpm)"
+        )
         if selected_files:
             initial_files_to_load = selected_files
 
     window = PhotoPrintApp(initial_files_to_load)
     window.show()
-    sys.exit(app.exec_())
+    window.center()  # Tambahkan baris ini agar window berada di tengah
+    sys.exit(app.exec())
