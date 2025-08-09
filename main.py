@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QComboBox,
     QFileDialog, QSpinBox, QVBoxLayout, QHBoxLayout,
     QFrame, QSizePolicy, QListWidgetItem,
-    QMessageBox, QListWidget
+    QMessageBox, QListWidget, QGroupBox, QFormLayout
 )
 from PySide6.QtGui import QPixmap, QPainter, QImage, QTransform, QPageSize, QPageLayout, QIcon
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog, QPrinterInfo
@@ -98,10 +98,13 @@ class PrintImage(QWidget):
         self.pageLabel = QLabel('Page 0 of 0')
         self.pageLabel.setAlignment(Qt.AlignCenter)
 
-        settingsLayout = QHBoxLayout()
-        settingsLayout.addWidget(QLabel('Printer:'))
+        # Satu baris: printer | spasi | paper size (tanpa judul)
+        settingsRowLayout = QHBoxLayout()
+        # Printer
+        printerLabel = QLabel("Printer:")
         self.printerCombo = QComboBox()
-        self.printerCombo.addItem("Save as PDF")
+        self.printerCombo.addItem("Save as PDF", userData=None)
+        self.printerCombo.setItemIcon(0, QIcon.fromTheme("document-save-as"))
         printers = QPrinterInfo.availablePrinters()
         default_printer_name = None
         if not printers:
@@ -110,9 +113,51 @@ class PrintImage(QWidget):
             default_printer_info = QPrinterInfo.defaultPrinter()
             if not default_printer_info.isNull():
                 default_printer_name = default_printer_info.printerName()
-            for printer in printers:
+            for idx, printer in enumerate(printers, start=1):
                 self.printerCombo.addItem(printer.printerName())
-        settingsLayout.addWidget(self.printerCombo)
+                # Gunakan ikon printer KDE
+                self.printerCombo.setItemIcon(idx, QIcon.fromTheme("printer"))
+        settingsRowLayout.addWidget(printerLabel)
+        settingsRowLayout.addWidget(self.printerCombo)
+
+        # Pembatas berupa spasi
+        settingsRowLayout.addStretch()
+
+        # Paper size
+        paperLabel = QLabel("Paper size:")
+        self.paperSizeCombo = QComboBox()
+        self.paper_size_display_map = {}
+        allowed_paper_names = {"A4", "A5", "Letter"}
+        default_printer_info = QPrinterInfo.defaultPrinter()
+        if not self.no_physical_printer and not default_printer_info.isNull():
+            supported_sizes = default_printer_info.supportedPageSizes()
+            supported_sizes = sorted(
+                supported_sizes,
+                key=lambda ps: QPageSize.name(ps.id()).lower()
+            )
+            for idx, page_size in enumerate(supported_sizes):
+                size_name = QPageSize.name(page_size.id())
+                dimensions = page_size.size(QPageSize.Unit.Millimeter)
+                width = dimensions.width()
+                height = dimensions.height()
+                display_name = f"{size_name} ({width:.2f} x {height:.2f} mm)"
+                self.paperSizeCombo.addItem(display_name)
+                self.paper_size_display_map[display_name] = page_size
+                self.paperSizeCombo.setItemIcon(idx, QIcon.fromTheme("x-office-document"))
+        else:
+            # Tambahkan semua definisi kertas, semua diberi ikon
+            for idx, display_name in enumerate(self.paper_definitions.keys()):
+                self.paperSizeCombo.addItem(display_name)
+                self.paperSizeCombo.setItemIcon(idx, QIcon.fromTheme("x-office-document"))
+        settingsRowLayout.addWidget(paperLabel)
+        settingsRowLayout.addWidget(self.paperSizeCombo)
+
+        self.paperSizeCombo.currentIndexChanged.connect(self.on_paper_size_changed)
+        idx_a4 = -1
+        for i in range(self.paperSizeCombo.count()):
+            if "a4" in self.paperSizeCombo.itemText(i).lower():
+                idx_a4 = i
+                break
 
         # Load last used printer from settings
         last_printer = self.settings.value("last_printer", None)
@@ -129,41 +174,7 @@ class PrintImage(QWidget):
                 self.printerCombo.setCurrentIndex(0)
         else:
             self.printerCombo.setCurrentIndex(0)
-
         self.printerCombo.currentIndexChanged.connect(self.on_printer_changed)
-
-        self.paperSizeCombo = QComboBox()
-        self.paper_size_display_map = {}
-        allowed_paper_names = {"A4", "A5", "Letter"}
-
-        default_printer_info = QPrinterInfo.defaultPrinter()
-        if not self.no_physical_printer and not default_printer_info.isNull():
-            supported_sizes = default_printer_info.supportedPageSizes()
-            supported_sizes = sorted(
-                supported_sizes,
-                key=lambda ps: QPageSize.name(ps.id()).lower()
-            )
-            for page_size in supported_sizes:
-                size_name = QPageSize.name(page_size.id())
-                dimensions = page_size.size(QPageSize.Unit.Millimeter)
-                width = dimensions.width()
-                height = dimensions.height()
-                display_name = f"{size_name} ({width:.2f} x {height:.2f} mm)"
-                self.paperSizeCombo.addItem(display_name)
-                self.paper_size_display_map[display_name] = page_size
-        else:
-            self.paperSizeCombo.addItem("F4 (210 x 330 mm)")
-            for display_name in self.paper_definitions.keys():
-                if display_name != "F4 (210 x 330 mm)":
-                    self.paperSizeCombo.addItem(display_name)
-        self.paperSizeCombo.currentIndexChanged.connect(self.on_paper_size_changed)  # changed handler
-        settingsLayout.addWidget(QLabel('Paper size:'))
-        settingsLayout.addWidget(self.paperSizeCombo)
-        idx_a4 = -1
-        for i in range(self.paperSizeCombo.count()):
-            if "a4" in self.paperSizeCombo.itemText(i).lower():
-                idx_a4 = i
-                break
 
         # Load last used paper size from settings
         last_paper_size = self.settings.value("last_paper_size", None)
@@ -175,7 +186,8 @@ class PrintImage(QWidget):
         elif idx_a4 != -1:
             self.paperSizeCombo.setCurrentIndex(idx_a4)
 
-        mainLayout.addLayout(settingsLayout)
+        # Tambahkan ke layout utama
+        mainLayout.addLayout(settingsRowLayout)
 
         previewLayout = QHBoxLayout()
         leftLayout = QVBoxLayout()
@@ -218,7 +230,7 @@ class PrintImage(QWidget):
         mainLayout.addLayout(previewLayout)
 
         bottomLayout = QHBoxLayout()
-        bottomLayout.addWidget(QLabel("Copies of each picture:"))
+        bottomLayout.addWidget(QLabel("Number of copies per image:"))
         self.copies_spinbox = QSpinBox()
         self.copies_spinbox.setRange(1, 99)
         self.copies_spinbox.setValue(1)
@@ -415,9 +427,7 @@ class PrintImage(QWidget):
         
         # Logika baru untuk layout "fixed size photo" (misal 3R, 4R)
         elif self.current_layout_key == "fixed_size_photo" and self.current_photo_print_size_key:
-            MAX_COLS = 10
-            MAX_ROWS = 10
-            MAX_PHOTOS_PER_PAGE = 50
+            MAX_PHOTOS_PER_PAGE = 300
             while images_to_place:
                 page_desc = {
                     "type": "n_up_on_page",
@@ -440,12 +450,9 @@ class PrintImage(QWidget):
                 if photo_w <= 0 or photo_h <= 0:
                     break
 
-                # Batasi jumlah kolom/baris agar tidak terlalu besar
-                cols = min(int((bg_paper_w_mm + self.PHOTO_GAP_MM) / (photo_w + self.PHOTO_GAP_MM)), MAX_COLS)
-                rows = min(int((bg_paper_h_mm + self.PHOTO_GAP_MM) / (photo_h + self.PHOTO_GAP_MM)), MAX_ROWS)
-                if cols * rows == 0:
-                    break
-
+                # Jumlah kolom dan baris menyesuaikan ukuran kertas dan foto
+                cols = max(1, int((bg_paper_w_mm + self.PHOTO_GAP_MM) / (photo_w + self.PHOTO_GAP_MM)))
+                rows = max(1, int((bg_paper_h_mm + self.PHOTO_GAP_MM) / (photo_h + self.PHOTO_GAP_MM)))
                 max_photos_on_page = min(cols * rows, MAX_PHOTOS_PER_PAGE)
                 for placed_count_on_page in range(max_photos_on_page):
                     if current_image_index >= len(images_to_place):
@@ -466,7 +473,6 @@ class PrintImage(QWidget):
                 if page_desc["image_paths"]:
                     self.document_pages.append(page_desc)
                 images_to_place = images_to_place[current_image_index:]
-
         # Logika untuk layout "full page"
         else: # self.current_layout_key == "full_page"
             for image_path in self.source_images:
@@ -679,4 +685,11 @@ if __name__ == '__main__':
     window = PrintImage(image_files)
     window.show()
     window.center()
+    sys.exit(app.exec())
+    sys.exit(app.exec())
+    window.center()
+    sys.exit(app.exec())
+    sys.exit(app.exec())
+    window.center()
+    sys.exit(app.exec())
     sys.exit(app.exec())
